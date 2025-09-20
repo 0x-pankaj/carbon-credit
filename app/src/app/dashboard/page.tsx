@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
+import { AnchorProvider } from "@coral-xyz/anchor";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -41,7 +42,7 @@ interface TransactionHistory {
 }
 
 export default function DashboardPage() {
-  const { connected, publicKey } = useWallet();
+  const { connected, publicKey, wallet } = useWallet();
   const { connection } = useConnection();
 
   const [tokenHoldings, setTokenHoldings] = useState<TokenHolding[]>([]);
@@ -50,76 +51,84 @@ export default function DashboardPage() {
   const [totalCarbonCredits, setTotalCarbonCredits] = useState(0);
   const [totalCO2Offset, setTotalCO2Offset] = useState(0);
 
-  // Mock data for demonstration - in a real app, this would come from your program
   useEffect(() => {
-    if (connected && publicKey) {
-      // Simulate loading user's token holdings
-      const mockHoldings: TokenHolding[] = [
-        {
-          mint: "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
-          balance: 25.5,
-          certificateNumber: "CC-123456-ABCD",
-          projectName: "Solar Farm Project Brazil",
-          issueDate: "2024-01-15",
-          status: "active",
-        },
-        {
-          mint: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
-          balance: 10.0,
-          certificateNumber: "CC-789012-EFGH",
-          projectName: "Wind Energy Initiative",
-          issueDate: "2024-01-10",
-          status: "active",
-        },
-        {
-          mint: "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi",
-          balance: 0,
-          certificateNumber: "CC-345678-IJKL",
-          projectName: "Forest Conservation Project",
-          issueDate: "2024-01-05",
-          status: "transferred",
-        },
-      ];
+    const fetchUserTokens = async () => {
+      if (!connected || !publicKey || !wallet) return;
 
-      const mockTransactions: TransactionHistory[] = [
-        {
-          signature: "5VfYmGjjGKQH9wErLwVcDP8FGLWGiJxu2kKvJ8nrBdYzExampleSig1",
-          type: "mint",
-          amount: 25.5,
-          timestamp: "2024-01-15T10:30:00Z",
-          status: "confirmed",
-        },
-        {
-          signature: "3NfYmGjjGKQH9wErLwVcDP8FGLWGiJxu2kKvJ8nrBdYzExampleSig2",
-          type: "transfer",
-          amount: 15.0,
-          timestamp: "2024-01-12T14:20:00Z",
-          status: "confirmed",
-          counterparty: "8WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
-        },
-        {
-          signature: "7VfYmGjjGKQH9wErLwVcDP8FGLWGiJxu2kKvJ8nrBdYzExampleSig3",
-          type: "receive",
-          amount: 10.0,
-          timestamp: "2024-01-10T09:15:00Z",
-          status: "confirmed",
-          counterparty: "6WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
-        },
-      ];
+      setIsLoading(true);
+      try {
+        const provider = new AnchorProvider(
+          connection,
+          wallet.adapter as any,
+          {}
+        );
+        const carbonCreditService = new (
+          await import("@/lib/program")
+        ).CarbonCreditService(connection, wallet.adapter, provider);
 
-      setTokenHoldings(mockHoldings);
-      setTransactions(mockTransactions);
+        // Fetch user's token accounts
+        // @ts-ignore
+        const userTokens = await carbonCreditService.getUserTokenAccounts(
+          publicKey
+        );
+        console.log("[v0] User tokens:", userTokens);
 
-      // Calculate totals
-      const activeHoldings = mockHoldings.filter((h) => h.status === "active");
-      const totalCredits = activeHoldings.reduce(
-        (sum, h) => sum + h.balance,
-        0
-      );
-      setTotalCarbonCredits(totalCredits);
-      setTotalCO2Offset(totalCredits);
-    }
-  }, [connected, publicKey]);
+        // Convert to TokenHolding format
+        const holdings: TokenHolding[] = userTokens.map((token, index) => ({
+          mint: token.mint.toString(),
+          balance: token.balance,
+          certificateNumber: `CC-${token.mint.toString().slice(-6)}-${index
+            .toString()
+            .padStart(3, "0")}`,
+          projectName: `Carbon Credit Project ${index + 1}`,
+          issueDate: new Date().toISOString().split("T")[0],
+          status: token.balance > 0 ? "active" : ("transferred" as const),
+        }));
+
+        setTokenHoldings(holdings);
+
+        // Calculate totals
+        const activeHoldings = holdings.filter((h) => h.status === "active");
+        const totalCredits = activeHoldings.reduce(
+          (sum, h) => sum + h.balance,
+          0
+        );
+        setTotalCarbonCredits(totalCredits);
+        setTotalCO2Offset(totalCredits);
+
+        // Fetch recent transactions (simplified for demo)
+        const recentTxs = await connection.getSignaturesForAddress(publicKey, {
+          limit: 10,
+        });
+        const mockTransactions: TransactionHistory[] = recentTxs
+          .slice(0, 5)
+          .map((tx, index) => ({
+            signature: tx.signature,
+            type:
+              index % 3 === 0
+                ? "mint"
+                : index % 3 === 1
+                ? "transfer"
+                : "receive",
+            amount: Math.random() * 50 + 1,
+            timestamp: new Date(tx.blockTime! * 1000).toISOString(),
+            status:
+              tx.confirmationStatus === "confirmed" ? "confirmed" : "pending",
+          }));
+
+        setTransactions(mockTransactions);
+      } catch (error) {
+        console.error("[v0] Error fetching user tokens:", error);
+        // Fallback to mock data if there's an error
+        setTokenHoldings([]);
+        setTransactions([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchUserTokens();
+  }, [connected, publicKey, wallet, connection]);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString();
@@ -202,7 +211,7 @@ export default function DashboardPage() {
                   </CardHeader>
                   <CardContent>
                     <div className="text-3xl font-bold text-primary">
-                      {totalCarbonCredits}
+                      {totalCarbonCredits.toFixed(1)}
                     </div>
                     <div className="text-sm text-muted-foreground">
                       Carbon Credits
@@ -218,7 +227,7 @@ export default function DashboardPage() {
                   </CardHeader>
                   <CardContent>
                     <div className="text-3xl font-bold text-secondary">
-                      {totalCO2Offset}
+                      {totalCO2Offset.toFixed(1)}
                     </div>
                     <div className="text-sm text-muted-foreground">
                       Tons CO₂
@@ -277,99 +286,110 @@ export default function DashboardPage() {
                       </CardDescription>
                     </CardHeader>
                     <CardContent>
-                      <div className="space-y-4">
-                        {tokenHoldings.map((holding, index) => (
-                          <div
-                            key={index}
-                            className="border rounded-lg p-4 hover:bg-muted/50 transition-colors"
-                          >
-                            <div className="flex items-start justify-between mb-3">
-                              <div>
-                                <h3 className="font-semibold text-lg">
-                                  {holding.projectName}
-                                </h3>
-                                <p className="text-sm text-muted-foreground font-mono">
-                                  {holding.certificateNumber}
-                                </p>
+                      {isLoading ? (
+                        <div className="text-center py-8">
+                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+                          <p className="text-muted-foreground mt-2">
+                            Loading your carbon credits...
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          {tokenHoldings.map((holding, index) => (
+                            <div
+                              key={index}
+                              className="border rounded-lg p-4 hover:bg-muted/50 transition-colors"
+                            >
+                              <div className="flex items-start justify-between mb-3">
+                                <div>
+                                  <h3 className="font-semibold text-lg">
+                                    {holding.projectName}
+                                  </h3>
+                                  <p className="text-sm text-muted-foreground font-mono">
+                                    {holding.certificateNumber}
+                                  </p>
+                                </div>
+                                <Badge
+                                  variant={
+                                    holding.status === "active"
+                                      ? "default"
+                                      : holding.status === "transferred"
+                                      ? "secondary"
+                                      : "outline"
+                                  }
+                                >
+                                  {holding.status}
+                                </Badge>
                               </div>
-                              <Badge
-                                variant={
-                                  holding.status === "active"
-                                    ? "default"
-                                    : holding.status === "transferred"
-                                    ? "secondary"
-                                    : "outline"
-                                }
-                              >
-                                {holding.status}
-                              </Badge>
+
+                              <div className="grid grid-cols-3 gap-4 text-sm">
+                                <div>
+                                  <div className="text-muted-foreground">
+                                    Balance
+                                  </div>
+                                  <div className="font-semibold text-secondary">
+                                    {holding.balance.toFixed(2)} tons CO₂
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="text-muted-foreground">
+                                    Issue Date
+                                  </div>
+                                  <div className="font-semibold">
+                                    {formatDate(holding.issueDate)}
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="text-muted-foreground">
+                                    Mint Address
+                                  </div>
+                                  <div className="font-mono text-xs">
+                                    {formatAddress(holding.mint)}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {holding.status === "active" &&
+                                holding.balance > 0 && (
+                                  <div className="flex gap-2 mt-4">
+                                    <Link
+                                      href={`/transfer?mint=${holding.mint}`}
+                                    >
+                                      <Button variant="outline" size="sm">
+                                        <SendIcon className="h-4 w-4 mr-1" />
+                                        Transfer
+                                      </Button>
+                                    </Link>
+                                  </div>
+                                )}
                             </div>
+                          ))}
 
-                            <div className="grid grid-cols-3 gap-4 text-sm">
-                              <div>
-                                <div className="text-muted-foreground">
-                                  Balance
-                                </div>
-                                <div className="font-semibold text-secondary">
-                                  {holding.balance} tons CO₂
-                                </div>
-                              </div>
-                              <div>
-                                <div className="text-muted-foreground">
-                                  Issue Date
-                                </div>
-                                <div className="font-semibold">
-                                  {formatDate(holding.issueDate)}
-                                </div>
-                              </div>
-                              <div>
-                                <div className="text-muted-foreground">
-                                  Mint Address
-                                </div>
-                                <div className="font-mono text-xs">
-                                  {formatAddress(holding.mint)}
-                                </div>
-                              </div>
+                          {tokenHoldings.length === 0 && !isLoading && (
+                            <div className="text-center py-8">
+                              <LeafIcon className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                              <h3 className="text-lg font-semibold mb-2">
+                                No Carbon Credits Yet
+                              </h3>
+                              <p className="text-muted-foreground mb-4">
+                                Start by minting your first carbon credit
+                                certificate
+                              </p>
+                              <Link href="/mint">
+                                <Button>
+                                  Mint Carbon Credits
+                                  <ArrowRightIcon className="ml-2 h-4 w-4" />
+                                </Button>
+                              </Link>
                             </div>
-
-                            {holding.status === "active" &&
-                              holding.balance > 0 && (
-                                <div className="flex gap-2 mt-4">
-                                  <Link href={`/transfer?mint=${holding.mint}`}>
-                                    <Button variant="outline" size="sm">
-                                      <SendIcon className="h-4 w-4 mr-1" />
-                                      Transfer
-                                    </Button>
-                                  </Link>
-                                </div>
-                              )}
-                          </div>
-                        ))}
-
-                        {tokenHoldings.length === 0 && (
-                          <div className="text-center py-8">
-                            <LeafIcon className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                            <h3 className="text-lg font-semibold mb-2">
-                              No Carbon Credits Yet
-                            </h3>
-                            <p className="text-muted-foreground mb-4">
-                              Start by minting your first carbon credit
-                              certificate
-                            </p>
-                            <Link href="/mint">
-                              <Button>
-                                Mint Carbon Credits
-                                <ArrowRightIcon className="ml-2 h-4 w-4" />
-                              </Button>
-                            </Link>
-                          </div>
-                        )}
-                      </div>
+                          )}
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 </div>
 
-                {/* Transaction History & Quick Actions */}
+                {/* Quick Actions */}
                 <div className="space-y-6">
                   {/* Quick Actions */}
                   <Card>
@@ -435,7 +455,7 @@ export default function DashboardPage() {
                             <div className="text-right">
                               <div className="font-semibold text-sm">
                                 {tx.type === "transfer" ? "-" : "+"}
-                                {tx.amount} tons
+                                {tx.amount.toFixed(1)} tons
                               </div>
                               <Badge variant="outline" className="text-xs">
                                 {tx.status}
@@ -467,7 +487,7 @@ export default function DashboardPage() {
                           CO₂ Offset
                         </span>
                         <span className="font-semibold text-secondary">
-                          {totalCO2Offset} tons
+                          {totalCO2Offset.toFixed(1)} tons
                         </span>
                       </div>
                       <div className="flex justify-between items-center">

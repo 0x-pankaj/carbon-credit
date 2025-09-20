@@ -1,12 +1,11 @@
-import type { LucideCrop as LucideProps } from "lucide-react";
+// import type { LucideCrop as LucideProps } from "lucide-react";
+import type { LucideProps } from "lucide-react";
 
-export function LeafIcon(props: typeof LucideProps) {
+export function LeafIcon(props: LucideProps) {
   return (
     <svg
       {...props}
       xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -20,7 +19,7 @@ export function LeafIcon(props: typeof LucideProps) {
   );
 }
 
-export function ShieldCheckIcon(props: typeof LucideProps) {
+export function ShieldCheckIcon(props: LucideProps) {
   return (
     <svg
       {...props}
@@ -40,7 +39,7 @@ export function ShieldCheckIcon(props: typeof LucideProps) {
   );
 }
 
-export function TrendingUpIcon(props: typeof LucideProps) {
+export function TrendingUpIcon(props: LucideProps) {
   return (
     <svg
       {...props}
@@ -60,7 +59,7 @@ export function TrendingUpIcon(props: typeof LucideProps) {
   );
 }
 
-export function ArrowRightIcon(props: typeof LucideProps) {
+export function ArrowRightIcon(props: LucideProps) {
   return (
     <svg
       {...props}
@@ -80,7 +79,7 @@ export function ArrowRightIcon(props: typeof LucideProps) {
   );
 }
 
-export function SendIcon(props: typeof LucideProps) {
+export function SendIcon(props: LucideProps) {
   return (
     <svg
       {...props}
